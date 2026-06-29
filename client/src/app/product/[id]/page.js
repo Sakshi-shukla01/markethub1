@@ -129,13 +129,15 @@ export default function ProductDetailPage() {
                 </p>
                 <h1 className="mt-2 text-2xl font-bold">{product.title}</h1>
               </div>
-              <button
-                onClick={() => (isAuthenticated ? wishlistMutation.mutate() : toast.error('Log in to use wishlist'))}
-                className="grid h-11 w-11 place-items-center rounded-full bg-white/70 transition hover:bg-white dark:bg-slate-800"
-                aria-label="wishlist"
-              >
-                <Heart className="h-5 w-5 text-red-500" />
-              </button>
+              {!isAdmin && (
+                <button
+                  onClick={() => (isAuthenticated ? wishlistMutation.mutate() : toast.error('Log in to use wishlist'))}
+                  className="grid h-11 w-11 place-items-center rounded-full bg-white/70 transition hover:bg-white dark:bg-slate-800"
+                  aria-label="wishlist"
+                >
+                  <Heart className="h-5 w-5 text-red-500" />
+                </button>
+              )}
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2 text-xs">

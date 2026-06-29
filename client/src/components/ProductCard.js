@@ -10,7 +10,7 @@ import { formatPrice, timeAgo, errMsg } from '@/lib/format';
 import { useAuth } from '@/hooks/useAuth';
 
 export default function ProductCard({ product, inWishlist = false }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
   const queryClient = useQueryClient();
 
   const wishlistMutation = useMutation({
@@ -49,7 +49,7 @@ export default function ProductCard({ product, inWishlist = false }) {
           />
           <button
             onClick={handleWishlist}
-            className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/80 backdrop-blur transition hover:bg-white dark:bg-slate-900/70"
+            className={`absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/80 backdrop-blur transition hover:bg-white dark:bg-slate-900/70 ${isAdmin ? 'hidden' : ''}`}
             aria-label="wishlist"
           >
             <Heart
