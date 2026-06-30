@@ -21,6 +21,11 @@ const adminRoutes = require('./routes/admin.routes');
 
 const app = express();
 
+// Render (and most cloud hosts) put the app behind a reverse proxy that sets
+// X-Forwarded-For. Trusting the first proxy lets express-rate-limit read the
+// real client IP instead of throwing ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+app.set('trust proxy', 1);
+
 // Stripe webhook needs the RAW body, so it must be registered BEFORE express.json()
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 
