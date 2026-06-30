@@ -1,39 +1,73 @@
-require('dotenv').config();
+const nodemailer = require('nodemailer');
+const env = require('../config/env');
 
-const env = {
-  PORT: process.env.PORT || 5000,
-  NODE_ENV: process.env.NODE_ENV || 'development',
-  CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
-  MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/markethub',
+/**
+ * Email sending with three modes, in priority order:
+ *  1. Resend (HTTPS API) — works on cloud hosts like Render where SMTP is blocked.
+ *     Enabled when RESEND_API_KEY is set.
+ *  2. SMTP (nodemailer) — for local/dev or hosts that allow outbound SMTP.
+ *  3. Demo (console) — logs the email so the app still works with no config.
+ */
 
-  JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET || 'dev_access_secret_change_me',
-  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'dev_refresh_secret_change_me',
-  ACCESS_TOKEN_TTL: process.env.ACCESS_TOKEN_TTL || '15m',
-  REFRESH_TOKEN_TTL: process.env.REFRESH_TOKEN_TTL || '7d',
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+// The "from" address. With Resend's test setup use onboarding@resend.dev,
+// or your own verified domain. Falls back to SMTP_FROM or a default.
+const MAIL_FROM =
+  process.env.MAIL_FROM ||
+  env.SMTP_FROM ||
+  'MarketHub <onboarding@resend.dev>';
 
-  SMTP_HOST: process.env.SMTP_HOST || '',
-  SMTP_PORT: process.env.SMTP_PORT || 587,
-  SMTP_USER: process.env.SMTP_USER || '',
-  SMTP_PASS: process.env.SMTP_PASS || '',
-  SMTP_FROM: process.env.SMTP_FROM || 'MarketHub <no-reply@markethub.dev>',
+let transporter = null;
+if (!RESEND_API_KEY && env.isEmailConfigured) {
+  transporter = nodemailer.createTransport({
+    host: env.SMTP_HOST,
+    port: Number(env.SMTP_PORT),
+    secure: Number(env.SMTP_PORT) === 465,
+    auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
+  });
+}
 
-  CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || '',
-  CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY || '',
-  CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET || '',
+async function sendViaResend({ to, subject, html, text }) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: MAIL_FROM,
+      to: [to],
+      subject,
+      html: html || `<p>${text}</p>`,
+      text: text || undefined,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend ${res.status}: ${body}`);
+  }
+  return { provider: 'resend' };
+}
 
-  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
-  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
+/**
+ * Sends an email. Never throws to the caller's critical path is the caller's
+ * job (auth wraps this in try/catch), but we surface errors so they can be logged.
+ */
+async function sendEmail({ to, subject, html, text }) {
+  if (RESEND_API_KEY) {
+    return sendViaResend({ to, subject, html, text });
+  }
+  if (transporter) {
+    await transporter.sendMail({ from: MAIL_FROM, to, subject, html, text });
+    return { provider: 'smtp' };
+  }
+  // demo mode
+  console.log('\n========== [EMAIL - DEMO MODE, not actually sent] ==========');
+  console.log('To:', to);
+  console.log('Subject:', subject);
+  console.log('Body:', text || html);
+  console.log('============================================================\n');
+  return { provider: 'demo' };
+}
 
-  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
-};
-
-env.isEmailConfigured = Boolean(
-  process.env.RESEND_API_KEY || (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS)
-);
-env.isCloudinaryConfigured = Boolean(
-  env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET
-);
-env.isStripeConfigured = Boolean(env.STRIPE_SECRET_KEY);
-env.isGoogleConfigured = Boolean(env.GOOGLE_CLIENT_ID);
-
-module.exports = env;
+module.exports = { sendEmail };
