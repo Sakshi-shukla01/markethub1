@@ -1,30 +1,43 @@
 const nodemailer = require('nodemailer');
 const env = require('../config/env');
 
-/**
- * Email sending with three modes, in priority order:
- *  1. Resend (HTTPS API) — works on cloud hosts like Render where SMTP is blocked.
- *     Enabled when RESEND_API_KEY is set.
- *  2. SMTP (nodemailer) — for local/dev or hosts that allow outbound SMTP.
- *  3. Demo (console) — logs the email so the app still works with no config.
- */
-
+const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-// The "from" address. With Resend's test setup use onboarding@resend.dev,
-// or your own verified domain. Falls back to SMTP_FROM or a default.
-const MAIL_FROM =
-  process.env.MAIL_FROM ||
-  env.SMTP_FROM ||
-  'MarketHub <onboarding@resend.dev>';
+
+const MAIL_FROM_EMAIL = process.env.MAIL_FROM_EMAIL || 'no-reply@markethub.dev';
+const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'MarketHub';
 
 let transporter = null;
-if (!RESEND_API_KEY && env.isEmailConfigured) {
+if (!BREVO_API_KEY && !RESEND_API_KEY && env.isEmailConfigured) {
   transporter = nodemailer.createTransport({
     host: env.SMTP_HOST,
     port: Number(env.SMTP_PORT),
     secure: Number(env.SMTP_PORT) === 465,
     auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
   });
+}
+
+async function sendViaBrevo({ to, subject, html, text }) {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: MAIL_FROM_NAME, email: MAIL_FROM_EMAIL },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html || `<p>${text}</p>`,
+      textContent: text || undefined,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Brevo ${res.status}: ${body}`);
+  }
+  return { provider: 'brevo' };
 }
 
 async function sendViaResend({ to, subject, html, text }) {
@@ -35,7 +48,7 @@ async function sendViaResend({ to, subject, html, text }) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: MAIL_FROM,
+      from: `${MAIL_FROM_NAME} <${MAIL_FROM_EMAIL}>`,
       to: [to],
       subject,
       html: html || `<p>${text}</p>`,
@@ -49,19 +62,23 @@ async function sendViaResend({ to, subject, html, text }) {
   return { provider: 'resend' };
 }
 
-/**
- * Sends an email. Never throws to the caller's critical path is the caller's
- * job (auth wraps this in try/catch), but we surface errors so they can be logged.
- */
 async function sendEmail({ to, subject, html, text }) {
+  if (BREVO_API_KEY) {
+    return sendViaBrevo({ to, subject, html, text });
+  }
   if (RESEND_API_KEY) {
     return sendViaResend({ to, subject, html, text });
   }
   if (transporter) {
-    await transporter.sendMail({ from: MAIL_FROM, to, subject, html, text });
+    await transporter.sendMail({
+      from: `${MAIL_FROM_NAME} <${MAIL_FROM_EMAIL}>`,
+      to,
+      subject,
+      html,
+      text,
+    });
     return { provider: 'smtp' };
   }
-  // demo mode
   console.log('\n========== [EMAIL - DEMO MODE, not actually sent] ==========');
   console.log('To:', to);
   console.log('Subject:', subject);

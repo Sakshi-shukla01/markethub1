@@ -27,7 +27,11 @@ const env = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
 };
 
-env.isEmailConfigured = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+env.isEmailConfigured = Boolean(
+  process.env.BREVO_API_KEY ||
+    process.env.RESEND_API_KEY ||
+    (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS)
+);
 env.isCloudinaryConfigured = Boolean(
   env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET
 );
