@@ -40,19 +40,12 @@ async function createAndSendOtp(email, purpose) {
 
   const subject =
     purpose === 'verify' ? 'Verify your MarketHub account' : 'Reset your MarketHub password';
-  // Email sending must never crash the request. Cloud hosts (Render, etc.) often
-  // block outbound SMTP, so if the email fails we log it and carry on — the OTP
-  // is still stored in the DB and returned to the client below.
-  try {
-    await sendEmail({
-      to: email,
-      subject,
-      text: `Your MarketHub ${purpose} code is ${code}. It expires in 10 minutes.`,
-      html: `<p>Your MarketHub code is <b style="font-size:20px">${code}</b>. It expires in 10 minutes.</p>`,
-    });
-  } catch (err) {
-    console.error('[auth] OTP email failed to send (continuing anyway):', err.message);
-  }
+  await sendEmail({
+    to: email,
+    subject,
+    text: `Your MarketHub ${purpose} code is ${code}. It expires in 10 minutes.`,
+    html: `<p>Your MarketHub code is <b style="font-size:20px">${code}</b>. It expires in 10 minutes.</p>`,
+  });
   return code;
 }
 
@@ -68,8 +61,8 @@ exports.register = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Account created. Check your email for the OTP code.',
-    // Expose the code so signup works even when email can't be delivered.
-    devOtp: code,
+    // In demo mode (no SMTP) we expose the code so you can test instantly.
+    ...(env.isEmailConfigured ? {} : { devOtp: code }),
   });
 });
 
