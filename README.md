@@ -231,4 +231,4 @@ client/src/
 
 ---
 
-Built for an internship evaluation. MIT licensed.
+MIT licensed.
