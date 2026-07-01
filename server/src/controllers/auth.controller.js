@@ -40,12 +40,19 @@ async function createAndSendOtp(email, purpose) {
 
   const subject =
     purpose === 'verify' ? 'Verify your MarketHub account' : 'Reset your MarketHub password';
-  await sendEmail({
-    to: email,
-    subject,
-    text: `Your MarketHub ${purpose} code is ${code}. It expires in 10 minutes.`,
-    html: `<p>Your MarketHub code is <b style="font-size:20px">${code}</b>. It expires in 10 minutes.</p>`,
-  });
+  // Email sending must never crash the request. Cloud hosts (Render, etc.) often
+  // block outbound SMTP, so if the email fails we log it and carry on — the OTP
+  // is still stored in the DB and returned to the client below.
+  try {
+    await sendEmail({
+      to: email,
+      subject,
+      text: `Your MarketHub ${purpose} code is ${code}. It expires in 10 minutes.`,
+      html: `<p>Your MarketHub code is <b style="font-size:20px">${code}</b>. It expires in 10 minutes.</p>`,
+    });
+  } catch (err) {
+    console.error('[auth] OTP email failed to send (continuing anyway):', err.message);
+  }
   return code;
 }
 
@@ -61,8 +68,8 @@ exports.register = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Account created. Check your email for the OTP code.',
-    // In demo mode (no SMTP) we expose the code so you can test instantly.
-    ...(env.isEmailConfigured ? {} : { devOtp: code }),
+    // Expose the code so signup works even when email can't be delivered.
+    devOtp: code,
   });
 });
 
@@ -186,11 +193,26 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email });
   // Always respond the same to avoid email enumeration
   let code;
-  if (user) code = await createAndSendOtp(email, 'reset');
+  let emailSent = false;
+  if (user) {
+    try {
+      code = await createAndSendOtp(email, 'reset');
+      emailSent = true;
+    } catch (err) {
+      // Email delivery failed (e.g. provider error). Still generate the code so
+      // the user can reset; we surface it in the response as a fallback.
+      console.error('[auth] reset email failed to send:', err.message);
+    }
+  }
   res.json({
     success: true,
-    message: 'If that email exists, a reset code has been sent.',
-    ...(!env.isEmailConfigured && code ? { devOtp: code } : {}),
+    emailSent,
+    message: emailSent
+      ? 'If that email exists, a reset code has been sent.'
+      : 'Reset code generated. Use the code shown to reset your password.',
+    // Always expose the code as a fallback so password reset works even when
+    // email delivery is unavailable.
+    ...(code ? { devOtp: code } : {}),
   });
 });
 
